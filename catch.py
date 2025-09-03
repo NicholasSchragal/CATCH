@@ -25,7 +25,10 @@ BLINK = '\033[5m'
 __version__ = '1.1 | 2025/08/27' # Changes to file output and printout formats
 
 
-def cal_finder(star_name: str, gaia_comp_check: int | float | None = None) -> None:
+def cal_finder(
+        star_name: str, 
+        gaia_comp_check: int | float | None = None
+    ) -> None:
     """
     Finds viable calibrator stars within 10 degrees for CHARA Array interferometric targets. Successful calibrators pass
     magnitude and diameter checks from the JMMC Stellar Diameters Catalogue
@@ -61,8 +64,22 @@ def cal_finder(star_name: str, gaia_comp_check: int | float | None = None) -> No
 
     print(f"Beginning calibration search for target: {YELLOW}{star_name}{RESET}")
     # Check with JMMC Stellar Diameters Catalogue (Vmag < 9.0, Hmag < 6.4, UDDH < 0.4)
-    vizier = Vizier(columns=["_RAJ2000", "_DEJ2000", "Name", "SpType", "Vmag", "Rmag","Hmag", "Kmag", "UDDH", "UDDK",
-                             "+_r"], catalog="II/346/jsdc_v2")
+    vizier = Vizier(
+        columns=[
+            "_RAJ2000",
+            "_DEJ2000",
+            "Name",
+            "SpType",
+            "Vmag",
+            "Rmag",
+            "Hmag",
+            "Kmag",
+            "UDDH",
+            "UDDK",
+            "+_r",
+        ], 
+        catalog="II/346/jsdc_v2",
+    )
 
     # The default vizier query row limit is set here to 100. If you would like to search for more, increase this number
     # NOTE: Increasing it will increase run-time
@@ -72,40 +89,76 @@ def cal_finder(star_name: str, gaia_comp_check: int | float | None = None) -> No
     # By default, CATCH queries the JMMC catalog for stars within 10 degrees, but it can be increased as required. The
     # default constraints are described in the README file, but can be edited by changing the column_filters parameter
     # in the query below. Guidance on syntax can be found at https://vizier.cds.unistra.fr/vizier/vizHelp/cst.htx
-    jmmc_result = vizier.query_region(f"{star_name}", radius="10d", column_filters={"Vmag":"<9.0", "Hmag":"<=6.4",
-                                                                           "UDDH": "<0.4", "_DEJ2000": ">-25"})
+    jmmc_result = vizier.query_region(
+        f"{star_name}", 
+        radius="10d", 
+        column_filters={
+            "Vmag":"<9.0",
+            "Hmag":"<=6.4",
+            "UDDH": "<0.4",
+            "_DEJ2000": ">-25",
+        }
+    )
     print(f"-->{GREEN}Query complete!{RESET}")
     if len(jmmc_result) > 0:
         jmmc_result = jmmc_result[0]
     else:
-        exit("ERROR: No calibrators found within 10 degrees of your target in JSDC. Consider modifying your "
-             "constraints!")
+        exit("ERROR: No calibrators found within 10 degrees of your target in JSDC. Consider modifying your constraints!")
     # Cross-check with Gaia DR3 catalogue for IPDfmp (<2), RUWE (<1.4), RVamp, and Vbroad<100 binarity and rapid
     # rotation checks
-    vizier = Vizier(columns=["_RAJ2000", "_DEJ2000", "IPDfmp", "RUWE", "RVamp", "Vbroad", "+_r"],
-                    catalog="I/355/gaiadr3")
+    vizier = Vizier(
+        columns=[
+            "_RAJ2000",
+            "_DEJ2000",
+            "IPDfmp",
+            "RUWE",
+            "RVamp",
+            "Vbroad",
+            "+_r",
+        ],
+        catalog="I/355/gaiadr3",
+    )
     print(f"-->Querying {BLUE}Gaia DR3 Catalogue{RESET}...")
     # The default vizier request times out at 60 seconds. You usually will not hit this limit at a row limit of 100, but
     # if you increased the row limit above, uncomment the following line and increase the timeout to a larger number.
     # WARNING: Doing this, depending on how much you increased the row limit by, can crash the program!!
     # vizier.TIMEOUT = 120
-    gaia_result = vizier.query_region(jmmc_result, radius="10s", column_filters={"IPDfmp": "<2", "RUWE": "<1.4",
-                                                                           "Vbroad": "<100"})
+    gaia_result = vizier.query_region(
+        jmmc_result,
+        radius="10s",
+        column_filters={
+            "IPDfmp": "<2",
+            "RUWE": "<1.4",
+            "Vbroad": "<100",
+        },
+    )
     print(f"-->{GREEN}Query complete!{RESET}")
     if len(gaia_result) > 0:
         gaia_result = gaia_result[0]
     else:
-        exit("ERROR: No calibrators found within 10 degrees of your target in Gaia DR3. Consider modifying your "
-             "constraints!")
+        exit("ERROR: No calibrators found within 10 degrees of your target in Gaia DR3. Consider modifying your constraints!")
     if gaia_comp_check:
-        vizier_neighbors = Vizier(columns=["_RAJ2000", "_DEJ2000", "IPDfmp", "RUWE", "RVamp", "Vbroad", "+_r"],
-                                  catalog="I/355/gaiadr3")
+        vizier_neighbors = Vizier(
+            columns=[
+                "_RAJ2000",
+                "_DEJ2000",
+                "IPDfmp",
+                "RUWE",
+                "RVamp",
+                "Vbroad",
+                "+_r",
+            ],
+            catalog="I/355/gaiadr3",
+        )
 
         # Now can print out each entry and catch Gaia DR3 companions
         vizier_neighbors.ROW_LIMIT = -1
 
         print(f"-->Checking for close Gaia companions within {gaia_comp_check}\"")
-        neighbors = vizier_neighbors.query_region(gaia_result, radius=f"{gaia_comp_check}s")[0]
+        neighbors = vizier_neighbors.query_region(
+            gaia_result,
+            radius=f"{gaia_comp_check}s",
+        )[0]
 
         removal_list = ([item for item, count in collections.Counter(neighbors['_q']).items() if count > 1])
 
@@ -113,12 +166,30 @@ def cal_finder(star_name: str, gaia_comp_check: int | float | None = None) -> No
             gaia_result = gaia_result[~np.isin(gaia_result['_q'], removal_list)]
 
     ind = gaia_result['_q'] - 1
-    jmmc_cols = Table([jmmc_result['Name'][ind], jmmc_result['_r'][ind], jmmc_result['_RAJ2000'][ind],
-                       jmmc_result['_DEJ2000'][ind], jmmc_result['SpType'][ind], jmmc_result['Vmag'][ind],
-                       jmmc_result['Rmag'][ind], jmmc_result['Hmag'][ind], jmmc_result['Kmag'][ind],
-                       jmmc_result['UDDH'][ind], jmmc_result['UDDK'][ind]])
+    jmmc_cols = Table(
+        [
+            jmmc_result['Name'][ind],
+            jmmc_result['_r'][ind],
+            jmmc_result['_RAJ2000'][ind],
+            jmmc_result['_DEJ2000'][ind],
+            jmmc_result['SpType'][ind],
+            jmmc_result['Vmag'][ind],
+            jmmc_result['Rmag'][ind],
+            jmmc_result['Hmag'][ind],
+            jmmc_result['Kmag'][ind],
+            jmmc_result['UDDH'][ind],
+            jmmc_result['UDDK'][ind],
+        ]
+    )
 
-    gaia_cols = Table([gaia_result['IPDfmp'], gaia_result['RUWE'], gaia_result['RVamp'], gaia_result['Vbroad']])
+    gaia_cols = Table(
+        [
+            gaia_result['IPDfmp'],
+            gaia_result['RUWE'],
+            gaia_result['RVamp'],
+            gaia_result['Vbroad'],
+        ],
+    )
 
     first_cross_check_table = hstack([jmmc_cols, gaia_cols])
 
@@ -170,7 +241,7 @@ def cal_finder(star_name: str, gaia_comp_check: int | float | None = None) -> No
     # Add one or more comment lines
     fcct.meta['comments'] = [f'Calibrators for {star_name} (RA: {star_ra}, DEC: {star_dec}, '
                              f'V Mag: {star_v_mag:.2f})']
-    fcct.write(f'{star_name}_Calibrators.txt', format='ascii.fixed_width', delimiter="", overwrite=True)
+    fcct.write(f'results/{star_name}_Calibrators.txt', format='ascii.fixed_width', delimiter="", overwrite=True)
 
     t2 = time.perf_counter()
     if len(fcct['Name']) > 0:
