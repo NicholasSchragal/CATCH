@@ -122,7 +122,7 @@ def cal_finder(
     # The default vizier request times out at 60 seconds. You usually will not hit this limit at a row limit of 100, but
     # if you increased the row limit above, uncomment the following line and increase the timeout to a larger number.
     # WARNING: Doing this, depending on how much you increased the row limit by, can crash the program!!
-    # vizier.TIMEOUT = 120
+    vizier.TIMEOUT = 300
     gaia_result = vizier.query_region(
         jmmc_result,
         radius="10s",
@@ -196,33 +196,64 @@ def cal_finder(
     # Cross-check with Kervella catalogue for binarity (should all be 0)
     vizier = Vizier(columns=["_RAJ2000", "_DEJ2000", "Name", "DMS", "W", "BinH", "BinG2"], catalog="J/A+A/623/A72")
     print(f"-->Querying {BLUE}Kervella et al. 2019 Catalogue{RESET}...")
-    kervella_result = vizier.query_region(gaia_result, radius="10s", column_filters={"DMS": "=0", "W": "=0",
-                                                                           "BinH": "=0", "BinG2": "=0"})
+    kervella_result = vizier.query_region(
+        gaia_result,
+        radius="10s",
+        column_filters={
+            "DMS": "=0",
+            "W": "=0",
+            "BinH": "=0",
+            "BinG2": "=0",
+        },
+    )
     print(f"-->{GREEN}Query complete!{RESET}")
     if len(kervella_result) > 0:
         kervella_result = kervella_result[0]
     else:
-        exit("ERROR: No calibrators found within 10 degrees of your target in the Kervella et al. 2019 Catalogue. "
-             "Consider modifying your constraints!")
+        exit("ERROR: No calibrators found within 10 degrees of your target in the Kervella et al. 2019 Catalogue. Consider modifying your constraints!")
 
-    kervella_cols = Table([kervella_result['DMS'], kervella_result['W'], kervella_result['BinH'],
-                           kervella_result['BinG2']])
+    kervella_cols = Table(
+        [
+            kervella_result['DMS'],
+            kervella_result['W'],
+            kervella_result['BinH'],
+            kervella_result['BinG2'],
+        ],
+    )
 
     ind = kervella_result['_q'] - 1
     second_cross_check_table = hstack([first_cross_check_table[ind], kervella_cols])
 
     # Cross-check with Cruzalebes catalogue for possible use as calibrators (CalFlag and IRflag should be 0)
-    vizier = Vizier(columns=["Diam-GAIA", "CalFlag", "IRflag"], catalog="II/361/mdfc-v10")
+    vizier = Vizier(
+        columns=[
+            "Diam-GAIA",
+            "CalFlag",
+            "IRflag",
+        ],
+        catalog="II/361/mdfc-v10",
+    )
     print(f"-->Querying {BLUE}Cruzalebes et al. 2019 Catalogue (MDFC){RESET}...")
-    cruzalebes_result = vizier.query_region(kervella_result, radius="10s", column_filters={"CalFlag": "=0",
-                                                                                           "IRflag": "=0"})
+    cruzalebes_result = vizier.query_region(
+        kervella_result,
+        radius="10s",
+        column_filters={
+            "CalFlag": "=0",
+            "IRflag": "=0",
+        },
+    )
     print(f"-->{GREEN}Query complete!{RESET}")
     if len(cruzalebes_result) > 0:
         cruzalebes_result = cruzalebes_result[0]
     else:
-        exit("ERROR: No calibrators found within 10 degrees of your target in MDFC. Consider modifying your "
-             "constraints!")
-    cruzalebes_cols = Table([cruzalebes_result['Diam-GAIA'], cruzalebes_result['CalFlag'], cruzalebes_result['IRflag']])
+        exit("ERROR: No calibrators found within 10 degrees of your target in MDFC. Consider modifying your constraints!")
+    cruzalebes_cols = Table(
+        [
+            cruzalebes_result['Diam-GAIA'],
+            cruzalebes_result['CalFlag'],
+            cruzalebes_result['IRflag'],
+        ],
+    )
 
     ind = cruzalebes_result['_q'] - 1
 
@@ -234,14 +265,31 @@ def cal_finder(
 
     # By default, CATCH will save the calibrator coordinates in sexagesimal. If you prefer them in degrees, comment out
     # the next 3 lines
-    coords = SkyCoord(ra=fcct['_RAJ2000'].data * u.deg, dec=fcct['_DEJ2000'].data * u.deg, frame='icrs')
-    fcct['_RAJ2000'] = coords.ra.to_string(unit=u.hour, sep=' ', pad=True, precision=2)
-    fcct['_DEJ2000'] = coords.dec.to_string(unit=u.deg, sep=' ', alwayssign=True, pad=True, precision=2)
+    coords = SkyCoord(
+        ra=fcct['_RAJ2000'].data * u.deg,
+        dec=fcct['_DEJ2000'].data * u.deg, 
+        frame='icrs',
+    )
+    fcct['_RAJ2000'] = coords.ra.to_string(
+        unit=u.hour,
+        sep=' ',
+        pad=True,
+        precision=2,
+    )
+    fcct['_DEJ2000'] = coords.dec.to_string(
+        unit=u.deg,
+        sep=' ',
+        alwayssign=True,
+        pad=True,
+        precision=2,
+    )
 
     # Add one or more comment lines
-    fcct.meta['comments'] = [f'Calibrators for {star_name} (RA: {star_ra}, DEC: {star_dec}, '
-                             f'V Mag: {star_v_mag:.2f})']
+    fcct.meta['comments'] = [f'Calibrators for {star_name} (RA: {star_ra}, DEC: {star_dec}, V Mag: {star_v_mag:.2f})']
+
     fcct.write(f'results/{star_name}_Calibrators.txt', format='ascii.fixed_width', delimiter="", overwrite=True)
+    fcct.write(f'results/{star_name}_Calibrators.csv', format='ascii.csv', overwrite=True)
+
 
     t2 = time.perf_counter()
     if len(fcct['Name']) > 0:
@@ -285,8 +333,22 @@ def cal_checker(calibrator_name: str, gaia_comp_check: bool = False) -> None:
 
     print(f"Checking calibrator viability of: {YELLOW}{calibrator_name}{RESET}")
     # Check with JMMC Stellar Diameters Catalogue (Vmag < 9.0, Hmag < 6.4, UDDH < 0.4, SpType = GKM)
-    vizier = Vizier(columns=["_RAJ2000", "_DEJ2000", "Name", "SpType", "Vmag", "Rmag", "Hmag", "Kmag", "UDDH", "UDDK",
-                             "+_r"], catalog="II/346/jsdc_v2")
+    vizier = Vizier(
+        columns=[
+            "_RAJ2000",
+            "_DEJ2000",
+            "Name",
+            "SpType",
+            "Vmag",
+            "Rmag",
+            "Hmag",
+            "Kmag",
+            "UDDH",
+            "UDDK",
+            "+_r",
+        ],
+        catalog="II/346/jsdc_v2",
+    )
 
     vizier.ROW_LIMIT = 100
     print(f"-->Querying {BLUE}JMMC Stellar Diameters Catalogue (JSDC){RESET}...")
@@ -295,8 +357,8 @@ def cal_checker(calibrator_name: str, gaia_comp_check: bool = False) -> None:
     if len(jmmc_result) != 0:
         jmmc_result = jmmc_result[0]
         print(f"-->{GREEN}Query complete!{RESET}")
-        print(f"---->Query results: V mag = {jmmc_result['Vmag'][0]:.2f}, H mag = {jmmc_result['Hmag'][0]:.2f}, "
-              f"UDDH = {jmmc_result['UDDH'][0]:.3f}")
+        print(f"---->Query results: V mag = {jmmc_result['Vmag'][0]:.2f}, H mag = {jmmc_result['Hmag'][0]:.2f}, UDDH = {jmmc_result['UDDH'][0]:.3f}")
+        
         if (jmmc_result['Vmag'] > 9) |  (jmmc_result['Hmag'] > 6.4) | (jmmc_result['UDDH'] > 0.5):
             print(f"-->{RED}{calibrator_name} fails JMMC Stellar Diameters Catalogue (JSDC) checks!{RESET}")
             check_pass_count -= 1
@@ -311,14 +373,23 @@ def cal_checker(calibrator_name: str, gaia_comp_check: bool = False) -> None:
             pass
 
     else:
-        print(f"-->{ORANGE}{calibrator_name} not found in JMMC Stellar Diameters Catalogue (JSDC) {RESET} — "
-              f"Check against other catalogues!{RESET}")
+        print(f"-->{ORANGE}{calibrator_name} not found in JMMC Stellar Diameters Catalogue (JSDC) {RESET} — Check against other catalogues!{RESET}")
         check_pass_count -= 1
 
     # Cross-check with Gaia DR3 catalogue for IPDfmp (<2), RUWE (<1.4), RVamp, and Vbroad<100 binarity and rapid
     # rotation checks
-    vizier = Vizier(columns=["_RAJ2000", "_DEJ2000", "IPDfmp", "RUWE", "RVamp", "Vbroad", "+_r"],
-                    catalog="I/355/gaiadr3")
+    vizier = Vizier(
+        columns=[
+            "_RAJ2000",
+            "_DEJ2000",
+            "IPDfmp",
+            "RUWE",
+            "RVamp",
+            "Vbroad",
+            "+_r",
+        ],
+        catalog="I/355/gaiadr3",
+    )
     print(f"-->Querying {BLUE}Gaia DR3 Catalogue{RESET}...")
     gaia_result = vizier.query_region(f"{calibrator_name}", radius="10s")
 
@@ -340,8 +411,7 @@ def cal_checker(calibrator_name: str, gaia_comp_check: bool = False) -> None:
             print(f"---->Query results: IPDfmp = {gaia_result[0]['IPDfmp']:.1f}, RUWE = {gaia_result[0]['RUWE']:.2f}")
 
         else:
-            print(f"---->Query results: IPDfmp = {gaia_result[0]['IPDfmp']:.1f}, "
-                  f"RUWE = {gaia_result[0]['RUWE']:.2f}, Vbroad = {gaia_result[0]['Vbroad']:.2f} km/s")
+            print(f"---->Query results: IPDfmp = {gaia_result[0]['IPDfmp']:.1f}, RUWE = {gaia_result[0]['RUWE']:.2f}, Vbroad = {gaia_result[0]['Vbroad']:.2f} km/s")
 
             if (((gaia_result[0]['IPDfmp'] is not np.ma.masked) and (gaia_result[0]['IPDfmp'] > 2)) |
                     ((gaia_result[0]['RUWE'] is not np.ma.masked) and (gaia_result[0]['RUWE'] > 1.4)) |
@@ -362,13 +432,24 @@ def cal_checker(calibrator_name: str, gaia_comp_check: bool = False) -> None:
                 pass
 
     # Cross-check with Kervella catalogue for binarity (should all be 0)
-    vizier = Vizier(columns=["_RAJ2000", "_DEJ2000", "Name", "DMS", "W", "BinH", "BinG2"], catalog="J/A+A/623/A72")
+    vizier = Vizier(
+        columns=[
+            "_RAJ2000",
+            "_DEJ2000",
+            "Name",
+            "DMS",
+            "W",
+            "BinH",
+            "BinG2",
+        ],
+        catalog="J/A+A/623/A72",
+    )
     print(f"-->Querying {BLUE}Kervella et al. 2019 Catalogue{RESET}...")
     kervella_result = vizier.query_region(f"{calibrator_name}", radius="5s")
     if len(kervella_result) > 0:
         print(f"-->{GREEN}Query complete!{RESET}")
-        print(f"---->Query results: DMS = {kervella_result[0]['DMS'][0]}, W = {kervella_result[0]['W'][0]}, "
-              f"BinH = {kervella_result[0]['BinH'][0]}, BinG2 = {kervella_result[0]['BinG2'][0]}")
+        print(f"---->Query results: DMS = {kervella_result[0]['DMS'][0]}, W = {kervella_result[0]['W'][0]}, BinH = {kervella_result[0]['BinH'][0]}, BinG2 = {kervella_result[0]['BinG2'][0]}")
+
         if ((kervella_result[0]['DMS'] != 0) | (kervella_result[0]['W'] != 0) | (kervella_result[0]['BinH'] != 0)
                 | kervella_result[0]['BinG2'] != 0):
             print(f"-->{RED}{calibrator_name} fails Kervella et al. 2019 Catalogue checks!{RESET}")
@@ -386,13 +467,19 @@ def cal_checker(calibrator_name: str, gaia_comp_check: bool = False) -> None:
             pass
 
     else:
-        print(f"-->{ORANGE}Warning: {calibrator_name} not found in Kervella et al. 2019 Catalogue "
-              f"— check against other catalogues!{RESET}")
+        print(f"-->{ORANGE}Warning: {calibrator_name} not found in Kervella et al. 2019 Catalogue — check against other catalogues!{RESET}")
         check_pass_count -= 1
 
 
     # Cross-check with Cruzalebes catalogue for possible use as calibrators (CalFlag and IRflag should be 0)
-    vizier = Vizier(columns=["Diam-GAIA", "CalFlag", "IRflag"], catalog="II/361/mdfc-v10")
+    vizier = Vizier(
+        columns=[
+            "Diam-GAIA",
+            "CalFlag",
+            "IRflag",
+        ],
+        catalog="II/361/mdfc-v10",
+    )
     print(f"-->Querying {BLUE}Cruzalebes et al. 2019 Catalogue (MDFC){RESET}...")
     cruzalebes_result = vizier.query_region(f"{calibrator_name}", radius="5s")
 
@@ -400,6 +487,7 @@ def cal_checker(calibrator_name: str, gaia_comp_check: bool = False) -> None:
         cruzalebes_result = cruzalebes_result[0]
         print(f"-->{GREEN}Query complete!{RESET}")
         print(f"---->Query results: CalFlag = {cruzalebes_result['CalFlag'][0]}, IRflag = {cruzalebes_result['IRflag'][0]}")
+        
         if (cruzalebes_result['CalFlag'] != 0) | (cruzalebes_result['IRflag'] == 7):
             print(f"-->{RED}{calibrator_name} fails Cruzalebes et al. 2019 Catalogue (MDFC) checks!{RESET}")
             check_pass_count -= 1
@@ -412,8 +500,7 @@ def cal_checker(calibrator_name: str, gaia_comp_check: bool = False) -> None:
             pass
 
     else:
-        print(f"-->{ORANGE}{calibrator_name} not found in Cruzalebes et al. 2019 Catalogue (MDFC) — "
-              f"check against other catalogues!{RESET}")
+        print(f"-->{ORANGE}{calibrator_name} not found in Cruzalebes et al. 2019 Catalogue (MDFC) — check against other catalogues!{RESET}")
         check_pass_count -= 1
 
     t2 = time.perf_counter()
@@ -432,12 +519,10 @@ def cal_checker(calibrator_name: str, gaia_comp_check: bool = False) -> None:
 
 def main():
     main_question = (
-        input(f"Would you like to find calibrators for a science target {BLUE}(type A){RESET}, "
-              f"or check a possible calibrator's viability {BLUE}(type B){RESET}?:\n"))
+        input(f"Would you like to find calibrators for a science target {BLUE}(type A){RESET}, or check a possible calibrator's viability {BLUE}(type B){RESET}?:\n"))
     if main_question in ["A", "a"]:
         target_star_name = input("Please enter the name of your target (please ensure the name is resolvable in SIMBAD):\n")
-        gaia_question = input("Would you like to filter calibrators by whether they have close companions in Gaia DR3 "
-                              "Y/[N]?\n").strip()
+        gaia_question = input("Would you like to filter calibrators by whether they have close companions in Gaia DR3 Y/[N]?\n").strip()
         if gaia_question in ["Y", "y"]:
             while True:
                 gaia_radius = input("Please enter the desired cutoff radius (in arcseconds) for Gaia companions:\n").strip()
@@ -459,8 +544,7 @@ def main():
         multiple_cal_check = input(f"Would you like to check a single calibrator, or multiple calibrators? [S]/M\n")
         if multiple_cal_check in ["S", "s", ""]:
             target_star_name = input("Please enter the name of your calibrator (please ensure the name is resolvable in SIMBAD):\n")
-            gaia_question = input("Would you like to filter calibrators by whether it has a companion within 10\" in Gaia DR3 "
-                                  "Y/[N]?\n").strip()
+            gaia_question = input("Would you like to filter calibrators by whether it has a companion within 10\" in Gaia DR3 Y/[N]?\n").strip()
             if gaia_question in ["Y", "y"]:
                 cal_checker(target_star_name, gaia_comp_check=True)
 
